@@ -285,10 +285,15 @@ function updateQuickStats() {
     const uniqueConversations = new Set(filteredConversations.map(c => c.conversation_id)).size;
     const uniqueCustomers = new Set(filteredConversations.map(c => c.customer_id)).size;
 
-    document.getElementById('statSegments').textContent = totalSegments.toLocaleString();
-    document.getElementById('statConversations').textContent = uniqueConversations.toLocaleString();
-    document.getElementById('statCustomers').textContent = uniqueCustomers.toLocaleString();
-    document.getElementById('statMessages').textContent = totalMessages.toLocaleString();
+    const statSegments = document.getElementById('statSegments');
+    const statConversations = document.getElementById('statConversations');
+    const statCustomers = document.getElementById('statCustomers');
+    const statMessages = document.getElementById('statMessages');
+
+    if (statSegments) statSegments.textContent = totalSegments.toLocaleString();
+    if (statConversations) statConversations.textContent = uniqueConversations.toLocaleString();
+    if (statCustomers) statCustomers.textContent = uniqueCustomers.toLocaleString();
+    if (statMessages) statMessages.textContent = totalMessages.toLocaleString();
 }
 
 // Update Header
