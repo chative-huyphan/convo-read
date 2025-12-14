@@ -137,6 +137,13 @@
                     <p class="header-subtitle" id="headerSubtitle">No data loaded</p>
                 </div>
                 <div class="header-actions">
+                    <select id="segmentDuration" class="sort-select" title="Merge segments within time gap">
+                        <option value="5">⏱️ Merge ≤5 min gap</option>
+                        <option value="10" selected>⏱️ Merge ≤10 min gap</option>
+                        <option value="15">⏱️ Merge ≤15 min gap</option>
+                        <option value="30">⏱️ Merge ≤30 min gap</option>
+                        <option value="60">⏱️ Merge ≤60 min gap</option>
+                    </select>
                     <select id="sortBy" class="sort-select">
                         <option value="date-desc">Latest First</option>
                         <option value="date-asc">Oldest First</option>

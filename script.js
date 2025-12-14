@@ -1,9 +1,11 @@
 // Global State
 let allConversations = [];
+let originalMessages = []; // Store original messages for re-segmentation
 let filteredConversations = [];
 let displayedConversations = [];
 let currentPage = 0;
 const PAGE_SIZE = 50;
+let currentSegmentGapMinutes = 10; // Default segment gap in minutes
 
 // Read state management with localStorage persistence
 const READ_CONVERSATIONS_KEY = 'readConversations';
@@ -37,6 +39,7 @@ const maxDuration = document.getElementById('maxDuration');
 const resetFilters = document.getElementById('resetFilters');
 const applyFilters = document.getElementById('applyFilters');
 const sortBy = document.getElementById('sortBy');
+const segmentDuration = document.getElementById('segmentDuration');
 
 // Export Elements
 const exportFiltered = document.getElementById('exportFiltered');
@@ -56,6 +59,7 @@ loadMoreBtn.addEventListener('click', loadMore);
 exportFiltered.addEventListener('click', exportFilteredData);
 exportCSV.addEventListener('click', exportAsCSV);
 clearReadStatusBtn.addEventListener('click', handleClearReadStatus);
+segmentDuration.addEventListener('change', handleSegmentDurationChange);
 
 // Debounced search
 let searchTimeout;
@@ -76,6 +80,10 @@ async function handleFileUpload(event) {
         try {
             const data = JSON.parse(e.target.result);
             allConversations = Array.isArray(data) ? data : [data];
+
+            // Extract original messages for re-segmentation
+            originalMessages = extractOriginalMessages(allConversations);
+            console.log(`📦 Extracted ${originalMessages.length} original messages for re-segmentation`);
 
             // Process conversations
             allConversations = allConversations.map((conv, idx) => ({
@@ -545,6 +553,146 @@ function handleClearReadStatus() {
         conversationsList.innerHTML = '';
         renderConversations();
     }
+}
+
+// Handle Segment Duration Change
+async function handleSegmentDurationChange() {
+    const newDuration = parseInt(segmentDuration.value);
+    if (newDuration === currentSegmentGapMinutes) return;
+
+    showLoading(`Re-segmenting conversations with ${newDuration}-minute intervals...`);
+
+    currentSegmentGapMinutes = newDuration;
+
+    // Re-segment the original messages
+    await reSegmentConversations(newDuration);
+
+    // Re-apply filters and render
+    applyFiltersFn();
+
+    hideLoading();
+}
+
+// Re-segment conversations based on new duration
+// This merges segments that are within the specified time gap
+async function reSegmentConversations(gapMinutes) {
+    if (originalMessages.length === 0) {
+        console.warn('No original messages to re-segment');
+        return;
+    }
+
+    const gapMs = gapMinutes * 60 * 1000;
+
+    // Group messages by original conversation_id
+    const conversationGroups = new Map();
+
+    originalMessages.forEach(msg => {
+        if (!conversationGroups.has(msg.conversationId)) {
+            conversationGroups.set(msg.conversationId, {
+                messages: [],
+                metadata: msg.metadata
+            });
+        }
+        conversationGroups.get(msg.conversationId).messages.push(msg);
+    });
+
+    // Create new segments by merging based on time gap
+    const newSegments = [];
+    let segmentCounter = 0;
+
+    conversationGroups.forEach((group, conversationId) => {
+        const msgs = group.messages;
+        const metadata = group.metadata;
+
+        // Sort messages by time
+        msgs.sort((a, b) => new Date(a.time) - new Date(b.time));
+
+        if (msgs.length === 0) return;
+
+        let currentSegment = [msgs[0]];
+        let lastMessageTime = new Date(msgs[0].time);
+
+        // Iterate through messages and merge based on gap
+        for (let i = 1; i < msgs.length; i++) {
+            const currentMessageTime = new Date(msgs[i].time);
+            const timeDiff = currentMessageTime - lastMessageTime;
+
+            if (timeDiff > gapMs) {
+                // Gap is too large, save current segment and start new one
+                newSegments.push(createSegment(
+                    conversationId,
+                    currentSegment,
+                    ++segmentCounter,
+                    metadata
+                ));
+                currentSegment = [msgs[i]];
+            } else {
+                // Gap is small enough, add to current segment
+                currentSegment.push(msgs[i]);
+            }
+
+            lastMessageTime = currentMessageTime;
+        }
+
+        // Save the last segment
+        if (currentSegment.length > 0) {
+            newSegments.push(createSegment(
+                conversationId,
+                currentSegment,
+                ++segmentCounter,
+                metadata
+            ));
+        }
+    });
+
+    // Update allConversations with new segments
+    allConversations = newSegments.map((seg, idx) => ({
+        ...seg,
+        _index: idx,
+        _duration_minutes: calculateDurationMinutes(seg.start_time, seg.end_time),
+        _message_count: seg.messages.length
+    }));
+
+    console.log(`✅ Re-segmented into ${allConversations.length} segments with ${gapMinutes}-minute gap threshold`);
+}
+
+// Create a segment object from messages
+function createSegment(conversationId, messages, segmentId, metadata) {
+    return {
+        conversation_id: conversationId,
+        segment_id: `seg_${segmentId}`,
+        messages: messages,
+        start_time: messages[0].time,
+        end_time: messages[messages.length - 1].time,
+        customer_id: metadata.customer_id,
+        language: metadata.language,
+        country: metadata.country,
+        ip_address: metadata.ip_address
+    };
+}
+
+// Extract original messages from loaded conversations
+function extractOriginalMessages(conversations) {
+    const messages = [];
+
+    conversations.forEach(conv => {
+        const metadata = {
+            customer_id: conv.customer_id,
+            language: conv.language,
+            country: conv.country,
+            ip_address: conv.ip_address
+        };
+
+        (conv.messages || []).forEach(msg => {
+            messages.push({
+                ...msg,
+                conversationId: conv.conversation_id,
+                metadata: metadata
+            });
+        });
+    });
+
+    return messages;
 }
 
 // Utility Functions
