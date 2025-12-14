@@ -1,9 +1,51 @@
+// Password Protection
+const REQUIRED_PASSWORD = 'CHATIVE.IO.2025';
+const SESSION_KEY = 'conversation_viewer_auth';
+
+// Check authentication on page load
+(function checkAuth() {
+    const isAuthenticated = sessionStorage.getItem(SESSION_KEY);
+
+    if (!isAuthenticated) {
+        let attempts = 0;
+        const maxAttempts = 3;
+
+        while (attempts < maxAttempts) {
+            const password = prompt('Please enter the password to access this application:');
+
+            if (password === null) {
+                // User clicked cancel
+                document.body.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100vh; font-family: Inter, sans-serif; color: #666;"><h2>Access Denied</h2></div>';
+                throw new Error('Authentication cancelled');
+            }
+
+            if (password === REQUIRED_PASSWORD) {
+                sessionStorage.setItem(SESSION_KEY, 'true');
+                break;
+            }
+
+            attempts++;
+            if (attempts < maxAttempts) {
+                alert(`Incorrect password. ${maxAttempts - attempts} attempt(s) remaining.`);
+            } else {
+                alert('Maximum attempts exceeded. Please refresh the page to try again.');
+                document.body.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100vh; font-family: Inter, sans-serif; color: #666; flex-direction: column; gap: 16px;"><h2>Access Denied</h2><p>Maximum password attempts exceeded.</p><button onclick="location.reload()" style="padding: 12px 24px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px;">Try Again</button></div>';
+                throw new Error('Authentication failed');
+            }
+        }
+    }
+})();
+
 // Global State
 let allConversations = [];
 let filteredConversations = [];
 let displayedConversations = [];
 let currentPage = 0;
 const PAGE_SIZE = 50;
+
+// Read state management with localStorage persistence
+const READ_CONVERSATIONS_KEY = 'readConversations';
+let readConversations = new Set(JSON.parse(localStorage.getItem(READ_CONVERSATIONS_KEY) || '[]'));
 
 // DOM Elements
 const jsonFileInput = document.getElementById('jsonFile');
@@ -37,6 +79,7 @@ const sortBy = document.getElementById('sortBy');
 // Export Elements
 const exportFiltered = document.getElementById('exportFiltered');
 const exportCSV = document.getElementById('exportCSV');
+const clearReadStatusBtn = document.getElementById('clearReadStatus');
 
 // Header Elements
 const headerTitle = document.getElementById('headerTitle');
@@ -50,6 +93,7 @@ sortBy.addEventListener('change', applySortAndRender);
 loadMoreBtn.addEventListener('click', loadMore);
 exportFiltered.addEventListener('click', exportFilteredData);
 exportCSV.addEventListener('click', exportAsCSV);
+clearReadStatusBtn.addEventListener('click', handleClearReadStatus);
 
 // Debounced search
 let searchTimeout;
@@ -335,15 +379,23 @@ function createConversationCard(conv) {
     const card = document.createElement('div');
     card.className = 'conversation-card';
     card.dataset.index = conv._index;
+    card.dataset.conversationId = conv.conversation_id;
 
     const messages = conv.messages || [];
     const agentCount = messages.filter(m => m.from === 'agent').length;
     const userCount = messages.filter(m => m.from === 'user').length;
+    const isRead = isConversationRead(conv.conversation_id);
+
+    // Add read class if conversation is read
+    if (isRead) {
+        card.classList.add('read');
+    }
 
     card.innerHTML = `
         <div class="conversation-header">
             <div class="conversation-info">
                 <div class="conversation-title">
+                    ${isRead ? '' : '<span class="unread-indicator">●</span>'}
                     Conversation #${conv.segment_id || conv._index + 1}
                 </div>
                 <div class="conversation-meta">
@@ -357,6 +409,9 @@ function createConversationCard(conv) {
             <div class="conversation-stats">
                 <span class="stat-badge">👤 ${userCount}</span>
                 <span class="stat-badge">🎧 ${agentCount}</span>
+                <button class="read-toggle-btn" title="${isRead ? 'Mark as unread' : 'Mark as read'}">
+                    ${isRead ? '📖' : '📩'}
+                </button>
                 <span class="toggle-icon">▼</span>
             </div>
         </div>
@@ -367,9 +422,58 @@ function createConversationCard(conv) {
         </div>
     `;
 
-    // Toggle expansion
-    card.querySelector('.conversation-header').addEventListener('click', () => {
+    // Toggle expansion and mark as read when expanded
+    card.querySelector('.conversation-header').addEventListener('click', (e) => {
+        // Don't toggle if clicking the read/unread button
+        if (e.target.closest('.read-toggle-btn')) {
+            return;
+        }
+
+        const wasExpanded = card.classList.contains('expanded');
         card.classList.toggle('expanded');
+
+        // Mark as read when expanding
+        if (!wasExpanded && !isConversationRead(conv.conversation_id)) {
+            markConversationAsRead(conv.conversation_id);
+            card.classList.add('read');
+            // Update the unread indicator and button
+            const unreadIndicator = card.querySelector('.unread-indicator');
+            if (unreadIndicator) {
+                unreadIndicator.remove();
+            }
+            const readBtn = card.querySelector('.read-toggle-btn');
+            readBtn.textContent = '📖';
+            readBtn.title = 'Mark as unread';
+        }
+    });
+
+    // Read/Unread toggle button
+    card.querySelector('.read-toggle-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const conversationId = conv.conversation_id;
+        const currentlyRead = isConversationRead(conversationId);
+
+        if (currentlyRead) {
+            markConversationAsUnread(conversationId);
+            card.classList.remove('read');
+            // Add unread indicator
+            const title = card.querySelector('.conversation-title');
+            if (!title.querySelector('.unread-indicator')) {
+                title.insertAdjacentHTML('afterbegin', '<span class="unread-indicator">●</span>');
+            }
+            e.target.textContent = '📩';
+            e.target.title = 'Mark as read';
+        } else {
+            markConversationAsRead(conversationId);
+            card.classList.add('read');
+            // Remove unread indicator
+            const unreadIndicator = card.querySelector('.unread-indicator');
+            if (unreadIndicator) {
+                unreadIndicator.remove();
+            }
+            e.target.textContent = '📖';
+            e.target.title = 'Mark as unread';
+        }
     });
 
     return card;
@@ -469,6 +573,18 @@ function exportAsCSV() {
     URL.revokeObjectURL(url);
 }
 
+// Clear Read Status
+function handleClearReadStatus() {
+    if (confirm('Are you sure you want to clear all read status? This will mark all conversations as unread.')) {
+        clearReadState();
+        // Re-render all conversations to update their visual state
+        currentPage = 0;
+        displayedConversations = [];
+        conversationsList.innerHTML = '';
+        renderConversations();
+    }
+}
+
 // Utility Functions
 function calculateDurationMinutes(startTime, endTime) {
     if (!startTime || !endTime) return 0;
@@ -530,3 +646,28 @@ function showLoading(text = 'Loading...') {
 function hideLoading() {
     loadingOverlay.style.display = 'none';
 }
+
+// Read state management functions
+function markConversationAsRead(conversationId) {
+    readConversations.add(conversationId);
+    saveReadState();
+}
+
+function markConversationAsUnread(conversationId) {
+    readConversations.delete(conversationId);
+    saveReadState();
+}
+
+function isConversationRead(conversationId) {
+    return readConversations.has(conversationId);
+}
+
+function saveReadState() {
+    localStorage.setItem(READ_CONVERSATIONS_KEY, JSON.stringify([...readConversations]));
+}
+
+function clearReadState() {
+    readConversations.clear();
+    saveReadState();
+}
+
