@@ -280,24 +280,23 @@ function applySortAndRender() {
 
 // Update Quick Stats
 function updateQuickStats() {
+    const totalSegments = filteredConversations.length;
     const totalMessages = filteredConversations.reduce((sum, conv) => sum + conv._message_count, 0);
+    const uniqueConversations = new Set(filteredConversations.map(c => c.conversation_id)).size;
     const uniqueCustomers = new Set(filteredConversations.map(c => c.customer_id)).size;
-    const avgLength = filteredConversations.length > 0
-        ? Math.round(totalMessages / filteredConversations.length)
-        : 0;
 
-    document.getElementById('statConversations').textContent = filteredConversations.length.toLocaleString();
-    document.getElementById('statMessages').textContent = totalMessages.toLocaleString();
+    document.getElementById('statSegments').textContent = totalSegments.toLocaleString();
+    document.getElementById('statConversations').textContent = uniqueConversations.toLocaleString();
     document.getElementById('statCustomers').textContent = uniqueCustomers.toLocaleString();
-    document.getElementById('statAvgLength').textContent = avgLength;
+    document.getElementById('statMessages').textContent = totalMessages.toLocaleString();
 }
 
 // Update Header
 function updateHeader() {
-    headerTitle.textContent = `Conversations (${filteredConversations.length.toLocaleString()})`;
+    headerTitle.textContent = `Segments (${filteredConversations.length.toLocaleString()})`;
 
     if (filteredConversations.length === allConversations.length) {
-        headerSubtitle.textContent = 'Showing all conversations';
+        headerSubtitle.textContent = 'Showing all segments';
     } else {
         headerSubtitle.textContent = `Filtered from ${allConversations.length.toLocaleString()} total`;
     }
@@ -309,7 +308,7 @@ async function renderConversations() {
         conversationsList.innerHTML = `
             <div class="empty-state">
                 <div class="empty-icon">🔍</div>
-                <h3>No conversations found</h3>
+                <h3>No segments found</h3>
                 <p>Try adjusting your filters</p>
             </div>
         `;
@@ -337,7 +336,7 @@ async function renderConversations() {
         if (filteredConversations.length > PAGE_SIZE) {
             loadMoreContainer.style.display = 'block';
             loadMoreBtn.disabled = true;
-            loadInfo.textContent = `All ${filteredConversations.length.toLocaleString()} conversations loaded`;
+            loadInfo.textContent = `All ${filteredConversations.length.toLocaleString()} segments loaded`;
         } else {
             loadMoreContainer.style.display = 'none';
         }
@@ -366,7 +365,10 @@ function createConversationCard(conv) {
             <div class="conversation-info">
                 <div class="conversation-title">
                     ${isRead ? '' : '<span class="unread-indicator">●</span>'}
-                    Conversation #${conv.segment_id || conv._index + 1}
+                    Segment #${conv.segment_id || conv._index + 1}
+                    <span style="font-size: 0.85em; color: var(--color-text-secondary); margin-left: 8px;">
+                        (Conv: ${conv.conversation_id.substring(0, 8)}...)
+                    </span>
                 </div>
                 <div class="conversation-meta">
                     <span class="meta-item">📅 ${formatDate(conv.start_time)}</span>
