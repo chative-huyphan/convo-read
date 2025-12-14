@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversation Analytics - Data Viewer</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>📊 Analytics</h1>
+                <p class="subtitle">Conversation Data Viewer</p>
+            </div>
+
+            <!-- File Upload -->
+            <div class="upload-section">
+                <label for="jsonFile" class="upload-btn">
+                    <span class="upload-icon">📁</span>
+                    <span>Load JSON Data</span>
+                    <input type="file" id="jsonFile" accept=".json" style="display: none;">
+                </label>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="quick-stats" id="quickStats" style="display: none;">
+                <h3>Quick Stats</h3>
+                <div class="stat-item">
+                    <span class="stat-label">Conversations</span>
+                    <span class="stat-value" id="statConversations">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Messages</span>
+                    <span class="stat-value" id="statMessages">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Customers</span>
+                    <span class="stat-value" id="statCustomers">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Avg Length</span>
+                    <span class="stat-value" id="statAvgLength">0</span>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="filters-section" id="filtersSection" style="display: none;">
+                <h3>Filters</h3>
+
+                <!-- Date Range -->
+                <div class="filter-group">
+                    <label>Date Range</label>
+                    <input type="date" id="dateFrom" class="filter-input">
+                    <input type="date" id="dateTo" class="filter-input">
+                </div>
+
+                <!-- Search -->
+                <div class="filter-group">
+                    <label>Search</label>
+                    <input type="text" id="searchInput" placeholder="Search messages..." class="filter-input">
+                </div>
+
+                <!-- Language -->
+                <div class="filter-group">
+                    <label>Language</label>
+                    <select id="languageFilter" class="filter-select">
+                        <option value="all">All Languages</option>
+                    </select>
+                </div>
+
+                <!-- Country -->
+                <div class="filter-group">
+                    <label>Country</label>
+                    <select id="countryFilter" class="filter-select">
+                        <option value="all">All Countries</option>
+                    </select>
+                </div>
+
+                <!-- Message Count -->
+                <div class="filter-group">
+                    <label>Message Count</label>
+                    <div class="range-inputs">
+                        <input type="number" id="minMessages" placeholder="Min" class="filter-input-small">
+                        <span>-</span>
+                        <input type="number" id="maxMessages" placeholder="Max" class="filter-input-small">
+                    </div>
+                </div>
+
+                <!-- Duration -->
+                <div class="filter-group">
+                    <label>Duration (minutes)</label>
+                    <div class="range-inputs">
+                        <input type="number" id="minDuration" placeholder="Min" class="filter-input-small">
+                        <span>-</span>
+                        <input type="number" id="maxDuration" placeholder="Max" class="filter-input-small">
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="filter-actions">
+                    <button class="btn-secondary" id="resetFilters">Reset</button>
+                    <button class="btn-primary" id="applyFilters">Apply</button>
+                </div>
+            </div>
+
+            <!-- Export -->
+            <div class="export-section" id="exportSection" style="display: none;">
+                <h3>Export</h3>
+                <button class="btn-export" id="exportFiltered">
+                    <span>💾</span>
+                    Export Filtered Data
+                </button>
+                <button class="btn-export" id="exportCSV">
+                    <span>📊</span>
+                    Export as CSV
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="content-header">
+                <div class="header-info">
+                    <h2 id="headerTitle">Conversations</h2>
+                    <p class="header-subtitle" id="headerSubtitle">No data loaded</p>
+                </div>
+                <div class="header-actions">
+                    <select id="sortBy" class="sort-select">
+                        <option value="date-desc">Latest First</option>
+                        <option value="date-asc">Oldest First</option>
+                        <option value="messages-desc">Most Messages</option>
+                        <option value="messages-asc">Least Messages</option>
+                        <option value="duration-desc">Longest Duration</option>
+                        <option value="duration-asc">Shortest Duration</option>
+                    </select>
+                </div>
+            </header>
+
+            <!-- Conversations List -->
+            <div class="conversations-container" id="conversationsContainer">
+                <!-- Empty State -->
+                <div class="empty-state" id="emptyState">
+                    <div class="empty-icon">📂</div>
+                    <h3>No Data Loaded</h3>
+                    <p>Upload a JSON file to start analyzing conversations</p>
+                </div>
+
+                <!-- Conversations will be rendered here -->
+                <div id="conversationsList" class="conversations-list"></div>
+
+                <!-- Load More -->
+                <div class="load-more-container" id="loadMoreContainer" style="display: none;">
+                    <button class="btn-load-more" id="loadMoreBtn">Load More</button>
+                    <p class="load-info" id="loadInfo">Showing 0 of 0</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <p id="loadingText">Loading...</p>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
