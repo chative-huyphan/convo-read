@@ -1,11 +1,12 @@
 // Global State
 let allConversations = [];
-let originalMessages = []; // Store original messages for re-segmentation
+let originalMessages = []; // Store original messages for conversation merging
+let originalSegments = []; // Store original segments for view switching
 let filteredConversations = [];
 let displayedConversations = [];
 let currentPage = 0;
 const PAGE_SIZE = 50;
-let currentSegmentGapMinutes = 10; // Default segment gap in minutes
+let viewMode = 'segment'; // 'segment' or 'conversation'
 
 // Read state management with localStorage persistence
 const READ_CONVERSATIONS_KEY = 'readConversations';
@@ -39,7 +40,9 @@ const maxDuration = document.getElementById('maxDuration');
 const resetFilters = document.getElementById('resetFilters');
 const applyFilters = document.getElementById('applyFilters');
 const sortBy = document.getElementById('sortBy');
-const segmentDuration = document.getElementById('segmentDuration');
+const viewModeBtn = document.getElementById('viewModeBtn');
+const viewModeIcon = document.getElementById('viewModeIcon');
+const viewModeText = document.getElementById('viewModeText');
 
 // Export Elements
 const exportFiltered = document.getElementById('exportFiltered');
@@ -59,7 +62,7 @@ loadMoreBtn.addEventListener('click', loadMore);
 exportFiltered.addEventListener('click', exportFilteredData);
 exportCSV.addEventListener('click', exportAsCSV);
 clearReadStatusBtn.addEventListener('click', handleClearReadStatus);
-segmentDuration.addEventListener('change', handleSegmentDurationChange);
+viewModeBtn.addEventListener('click', toggleViewMode);
 
 // Debounced search
 let searchTimeout;
@@ -81,17 +84,21 @@ async function handleFileUpload(event) {
             const data = JSON.parse(e.target.result);
             allConversations = Array.isArray(data) ? data : [data];
 
-            // Extract original messages for re-segmentation
+            // Extract original messages for conversation merging
             originalMessages = extractOriginalMessages(allConversations);
-            console.log(`📦 Extracted ${originalMessages.length} original messages for re-segmentation`);
+            console.log(`📦 Extracted ${originalMessages.length} original messages`);
 
-            // Process conversations
+            // Process conversations with metrics
             allConversations = allConversations.map((conv, idx) => ({
                 ...conv,
                 _index: idx,
                 _duration_minutes: calculateDurationMinutes(conv.start_time, conv.end_time),
-                _message_count: (conv.messages || []).length
+                _message_count: (conv.messages || []).length,
+                _avg_response_time: calculateAverageResponseTime(conv.messages || [])
             }));
+
+            // Store original segments for view switching
+            originalSegments = [...allConversations];
 
             filteredConversations = [...allConversations];
 
@@ -267,6 +274,10 @@ function applySortAndRender() {
                 return b._duration_minutes - a._duration_minutes;
             case 'duration-asc':
                 return a._duration_minutes - b._duration_minutes;
+            case 'avg-response-desc':
+                return (b._avg_response_time || 0) - (a._avg_response_time || 0);
+            case 'avg-response-asc':
+                return (a._avg_response_time || 0) - (b._avg_response_time || 0);
             default:
                 return 0;
         }
@@ -298,10 +309,11 @@ function updateQuickStats() {
 
 // Update Header
 function updateHeader() {
-    headerTitle.textContent = `Segments (${filteredConversations.length.toLocaleString()})`;
+    const viewLabel = viewMode === 'segment' ? 'Segments' : 'Conversations';
+    headerTitle.textContent = `${viewLabel} (${filteredConversations.length.toLocaleString()})`;
 
     if (filteredConversations.length === allConversations.length) {
-        headerSubtitle.textContent = 'Showing all segments';
+        headerSubtitle.textContent = `Showing all ${viewLabel.toLowerCase()}`;
     } else {
         headerSubtitle.textContent = `Filtered from ${allConversations.length.toLocaleString()} total`;
     }
@@ -365,20 +377,24 @@ function createConversationCard(conv) {
         card.classList.add('read');
     }
 
+    const cardLabel = viewMode === 'segment' ? `Segment #${conv.segment_id || conv._index + 1}` : `Conversation`;
+    const avgResponseTime = conv._avg_response_time;
+
     card.innerHTML = `
         <div class="conversation-header">
             <div class="conversation-info">
                 <div class="conversation-title">
                     ${isRead ? '' : '<span class="unread-indicator">●</span>'}
-                    Segment #${conv.segment_id || conv._index + 1}
+                    ${cardLabel}
                     <span style="font-size: 0.85em; color: var(--color-text-secondary); margin-left: 8px;">
-                        (Conv: ${conv.conversation_id.substring(0, 8)}...)
+                        (ID: ${conv.conversation_id.substring(0, 8)}...)
                     </span>
                 </div>
                 <div class="conversation-meta">
                     <span class="meta-item">📅 ${formatDate(conv.start_time)}</span>
                     <span class="meta-item">⏱️ ${formatDuration(conv._duration_minutes)}</span>
                     <span class="meta-item">💬 ${conv._message_count} msgs</span>
+                    ${avgResponseTime !== null ? `<span class="meta-item">⚡ Avg: ${formatDuration(avgResponseTime)}</span>` : ''}
                     ${conv.language ? `<span class="tag">${conv.language.toUpperCase()}</span>` : ''}
                     ${conv.country && conv.country !== 'unknown' ? `<span class="tag">${conv.country}</span>` : ''}
                 </div>
@@ -562,22 +578,94 @@ function handleClearReadStatus() {
     }
 }
 
-// Handle Segment Duration Change
-async function handleSegmentDurationChange() {
-    const newDuration = parseInt(segmentDuration.value);
-    if (newDuration === currentSegmentGapMinutes) return;
+// Toggle View Mode
+async function toggleViewMode() {
+    const newMode = viewMode === 'segment' ? 'conversation' : 'segment';
 
-    showLoading(`Re-segmenting conversations with ${newDuration}-minute intervals...`);
+    showLoading(`Switching to ${newMode} view...`);
 
-    currentSegmentGapMinutes = newDuration;
+    viewMode = newMode;
 
-    // Re-segment the original messages
-    await reSegmentConversations(newDuration);
+    // Update button UI
+    if (viewMode === 'conversation') {
+        viewModeIcon.textContent = '💬';
+        viewModeText.textContent = 'Conversation View';
+        await mergeToConversations();
+    } else {
+        viewModeIcon.textContent = '📊';
+        viewModeText.textContent = 'Segment View';
+        await restoreToSegments();
+    }
 
     // Re-apply filters and render
     applyFiltersFn();
 
     hideLoading();
+}
+
+// Merge segments into full conversations
+async function mergeToConversations() {
+    if (originalMessages.length === 0) {
+        console.warn('No original messages to merge');
+        return;
+    }
+
+    // Group messages by conversation_id
+    const conversationGroups = new Map();
+
+    originalMessages.forEach(msg => {
+        if (!conversationGroups.has(msg.conversationId)) {
+            conversationGroups.set(msg.conversationId, {
+                messages: [],
+                metadata: msg.metadata
+            });
+        }
+        conversationGroups.get(msg.conversationId).messages.push(msg);
+    });
+
+    // Create full conversations
+    const conversations = [];
+    let conversationCounter = 0;
+
+    conversationGroups.forEach((group, conversationId) => {
+        const msgs = group.messages;
+        const metadata = group.metadata;
+
+        // Sort messages by time
+        msgs.sort((a, b) => new Date(a.time) - new Date(b.time));
+
+        if (msgs.length === 0) return;
+
+        conversations.push({
+            conversation_id: conversationId,
+            segment_id: null, // No segment in conversation view
+            messages: msgs,
+            start_time: msgs[0].time,
+            end_time: msgs[msgs.length - 1].time,
+            customer_id: metadata.customer_id,
+            language: metadata.language,
+            country: metadata.country,
+            ip_address: metadata.ip_address,
+            _index: conversationCounter++,
+            _duration_minutes: calculateDurationMinutes(msgs[0].time, msgs[msgs.length - 1].time),
+            _message_count: msgs.length,
+            _avg_response_time: calculateAverageResponseTime(msgs)
+        });
+    });
+
+    allConversations = conversations;
+    console.log(`✅ Merged into ${allConversations.length} full conversations`);
+}
+
+// Restore to original segments
+async function restoreToSegments() {
+    if (originalSegments.length === 0) {
+        console.warn('No original segments to restore');
+        return;
+    }
+
+    allConversations = [...originalSegments];
+    console.log(`✅ Restored ${allConversations.length} original segments`);
 }
 
 // Re-segment conversations based on new duration
@@ -700,6 +788,32 @@ function extractOriginalMessages(conversations) {
     });
 
     return messages;
+}
+
+// Calculate average response time (agent response to user messages)
+function calculateAverageResponseTime(messages) {
+    if (!messages || messages.length < 2) return null;
+
+    const responseTimes = [];
+
+    for (let i = 0; i < messages.length - 1; i++) {
+        const currentMsg = messages[i];
+        const nextMsg = messages[i + 1];
+
+        // If current message is from user and next is from agent, calculate response time
+        if (currentMsg.from === 'user' && nextMsg.from === 'agent') {
+            const responseTime = (new Date(nextMsg.time) - new Date(currentMsg.time)) / 1000 / 60; // in minutes
+            if (responseTime >= 0) { // Only count positive response times
+                responseTimes.push(responseTime);
+            }
+        }
+    }
+
+    if (responseTimes.length === 0) return null;
+
+    // Calculate average
+    const avgTime = responseTimes.reduce((sum, time) => sum + time, 0) / responseTimes.length;
+    return avgTime;
 }
 
 // Utility Functions

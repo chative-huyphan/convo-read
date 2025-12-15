@@ -316,6 +316,40 @@ body {
     color: var(--color-text-secondary);
 }
 
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.view-mode-toggle {
+    display: flex;
+}
+
+.btn-view-mode {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--color-accent);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-view-mode:hover {
+    background: var(--color-accent-light);
+    transform: translateY(-1px);
+}
+
+.btn-view-mode:active {
+    transform: translateY(0);
+}
+
 .sort-select {
     padding: 8px 12px;
     border: 1px solid var(--color-border);
